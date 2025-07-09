@@ -534,6 +534,14 @@ include("../../includes/db.php");
         function closeModal(modalId) {
             const modal = document.getElementById(modalId);
             modal.classList.remove('show');
+            
+            // Stop modal updates when closing
+            if (modalId === 'editUserModal') {
+                stopModalUserUpdates();
+            } else if (modalId === 'editProductModal') {
+                stopModalProductUpdates();
+            }
+            
             setTimeout(() => {
                 modal.style.display = 'none';
                 // Reset custom inputs
@@ -547,6 +555,17 @@ include("../../includes/db.php");
                 }
             }, 150); 
         }
+
+        // Override existing functions to include update triggers
+        const originalShowTab = showTab;
+        showTab = function(tab) {
+            originalShowTab(tab);
+            if (tab === 'products') {
+                setTimeout(() => {
+                    triggerRetailerUpdate();
+                }, 300);
+            }
+        };
 
         // Filter functionality
         function applyUserFilters() {
@@ -630,9 +649,18 @@ include("../../includes/db.php");
             else showTab("users");
         });
 
+        // Enhanced click-outside functionality to also stop modal updates
         document.querySelectorAll(".modal").forEach(modal => {
             modal.addEventListener("click", e => {
-                if (e.target === modal) closeModal(modal.id);
+                if (e.target === modal) {
+                    // Stop modal updates when closing via click-outside
+                    if (modal.id === 'editUserModal') {
+                        stopModalUserUpdates();
+                    } else if (modal.id === 'editProductModal') {
+                        stopModalProductUpdates();
+                    }
+                    closeModal(modal.id);
+                }
             });
         });
 
@@ -641,6 +669,9 @@ include("../../includes/db.php");
             document.getElementById("editUserName").value = name;
             document.getElementById("editUserRole").value = role;
             openModal("editUserModal");
+
+            // Start real-time updates for this user
+            startModalUserUpdates(id);
         }
 
         function openEditProductModal(id, name, desc, qty, price, color, size, imagePath) {
@@ -703,6 +734,9 @@ include("../../includes/db.php");
             }
             
             openModal("editProductModal");
+
+            // Start real-time updates for this product
+            startModalProductUpdates(id);
         }
 
         function removeCurrentImage() {
@@ -842,10 +876,41 @@ include("../../includes/db.php");
             const editProductForm = document.getElementById("editProductForm");
             if (editProductForm) {
                 editProductForm.addEventListener("submit", function(e) {
+                    // Mark that a product form was just saved
+                    productFormLastSaved = Date.now();
+                    
                     // Let the form submit normally, then trigger update
                     setTimeout(() => {
                         triggerRetailerUpdate();
                         // Also reload the current page's product table
+                        location.reload();
+                    }, 1000);
+                });
+            }
+            
+            // Handle edit user form success
+            const editUserForm = document.getElementById("editUserForm");
+            if (editUserForm) {
+                editUserForm.addEventListener("submit", function(e) {
+                    // Mark that a user form was just saved
+                    userFormLastSaved = Date.now();
+                    
+                    // Let the form submit normally, then trigger update
+                    setTimeout(() => {
+                        // Also reload the current page's user table
+                        location.reload();
+                    }, 1000);
+                });
+            }
+            
+            // Add user form submission tracking
+            const addUserForm = document.getElementById("addUserForm");
+            if (addUserForm) {
+                addUserForm.addEventListener("submit", function(e) {
+                    // Mark that a user form was just saved
+                    userFormLastSaved = Date.now();
+                    
+                    setTimeout(() => {
                         location.reload();
                     }, 1000);
                 });
@@ -856,6 +921,325 @@ include("../../includes/db.php");
         let lastUserUpdate = 0;
         let lastProductUpdate = 0;
         
+        // Modal real-time updates
+        let currentEditUserId = null;
+        let currentEditProductId = null;
+        let modalUserUpdateInterval = null;
+        let modalProductUpdateInterval = null;
+        let userFormLastSaved = 0;
+        let productFormLastSaved = 0;
+        let allowModalUpdates = true;
+        
+        function startModalUserUpdates(userId) {
+            currentEditUserId = userId;
+            allowModalUpdates = true;
+            modalUserUpdateInterval = setInterval(() => {
+                updateModalUser(userId);
+            }, 2000);
+        }
+        
+        function stopModalUserUpdates() {
+            if (modalUserUpdateInterval) {
+                clearInterval(modalUserUpdateInterval);
+                modalUserUpdateInterval = null;
+            }
+            currentEditUserId = null;
+            allowModalUpdates = true;
+        }
+        
+        function startModalProductUpdates(productId) {
+            currentEditProductId = productId;
+            allowModalUpdates = true;
+            modalProductUpdateInterval = setInterval(() => {
+                updateModalProduct(productId);
+            }, 2000);
+        }
+        
+        function stopModalProductUpdates() {
+            if (modalProductUpdateInterval) {
+                clearInterval(modalProductUpdateInterval);
+                modalProductUpdateInterval = null;
+            }
+            currentEditProductId = null;
+            allowModalUpdates = true;
+        }
+        
+        async function updateModalUser(userId) {
+            // Only update if we recently detected a form submission or modal just opened
+            if (!allowModalUpdates) return;
+            
+            try {
+                const response = await fetch(`ajax/get_single_user.php?id=${userId}&t=${Date.now()}`);
+                const data = await response.json();
+                
+                if (data.success && data.user) {
+                    const user = data.user;
+                    
+                    // Update form fields if they exist and modal is open
+                    const modal = document.getElementById('editUserModal');
+                    if (modal && modal.style.display === 'flex') {
+                        const nameField = document.getElementById('editUserName');
+                        const roleField = document.getElementById('editUserRole');
+                        
+                        // Check if user recently saved (within last 5 seconds)
+                        const recentlySaved = (Date.now() - userFormLastSaved) < 5000;
+                        
+                        // Only update if there was a recent save or the user isn't actively typing
+                        if (recentlySaved || (!document.activeElement || 
+                            (document.activeElement !== nameField && document.activeElement !== roleField))) {
+                            
+                            let hasUpdates = false;
+                            
+                            if (nameField && nameField.value !== user.userName) {
+                                nameField.value = user.userName;
+                                hasUpdates = true;
+                            }
+                            
+                            if (roleField && roleField.value !== user.userRole) {
+                                roleField.value = user.userRole;
+                                hasUpdates = true;
+                            }
+                            
+                            if (hasUpdates && recentlySaved) {
+                                showModalUpdateNotification('User data updated by another admin');
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.log('Modal user update check failed:', error);
+            }
+        }
+        
+        async function updateModalProduct(productId) {
+            // Only update if we recently detected a form submission or modal just opened
+            if (!allowModalUpdates) return;
+            
+            try {
+                const response = await fetch(`ajax/get_single_product.php?id=${productId}&t=${Date.now()}`);
+                const data = await response.json();
+                
+                if (data.success && data.product) {
+                    const product = data.product;
+                    
+                    // Update form fields if they exist and modal is open
+                    const modal = document.getElementById('editProductModal');
+                    if (modal && modal.style.display === 'flex') {
+                        const nameField = document.getElementById('editProductName');
+                        const descField = document.getElementById('editProductDescription');
+                        const qtyField = document.getElementById('editProductQty');
+                        const priceField = document.getElementById('editProductPrice');
+                        const colorSelect = document.getElementById('editProductColor');
+                        const colorCustomInput = document.getElementById('editProductColorCustom');
+                        const sizeSelect = document.getElementById('editProductSize');
+                        const sizeCustomInput = document.getElementById('editProductSizeCustom');
+                        
+                        // Check if user recently saved (within last 5 seconds)
+                        const recentlySaved = (Date.now() - productFormLastSaved) < 5000;
+                        
+                        // Only update if there was a recent save or the user isn't actively typing
+                        const activeInputs = [nameField, descField, qtyField, priceField, colorCustomInput, sizeCustomInput];
+                        const userIsTyping = activeInputs.includes(document.activeElement);
+                        
+                        if (recentlySaved || !userIsTyping) {
+                            let hasUpdates = false;
+                            
+                            if (nameField && nameField.value !== product.prodName) {
+                                nameField.value = product.prodName;
+                                hasUpdates = true;
+                            }
+                            
+                            if (descField && descField.value !== product.prodDescription) {
+                                descField.value = product.prodDescription;
+                                hasUpdates = true;
+                            }
+                            
+                            if (qtyField && qtyField.value != product.quantity) {
+                                qtyField.value = product.quantity;
+                                hasUpdates = true;
+                            }
+                            
+                            if (priceField && parseFloat(priceField.value) !== parseFloat(product.price)) {
+                                priceField.value = product.price;
+                                hasUpdates = true;
+                            }
+                            
+                            // Handle color updates only if user isn't focused on color inputs
+                            if (document.activeElement !== colorSelect && document.activeElement !== colorCustomInput) {
+                                const colorOptions = Array.from(colorSelect.options).map(opt => opt.value);
+                                if (product.color && colorOptions.includes(product.color)) {
+                                    if (colorSelect.value !== product.color) {
+                                        colorSelect.value = product.color;
+                                        colorCustomInput.style.display = "none";
+                                        colorCustomInput.value = "";
+                                        hasUpdates = true;
+                                    }
+                                } else if (product.color) {
+                                    if (colorSelect.value !== "other" || colorCustomInput.value !== product.color) {
+                                        colorSelect.value = "other";
+                                        colorCustomInput.style.display = "block";
+                                        colorCustomInput.value = product.color;
+                                        hasUpdates = true;
+                                    }
+                                }
+                            }
+                            
+                            // Handle size updates only if user isn't focused on size inputs
+                            if (document.activeElement !== sizeSelect && document.activeElement !== sizeCustomInput) {
+                                const sizeOptions = Array.from(sizeSelect.options).map(opt => opt.value);
+                                if (product.size && sizeOptions.includes(product.size)) {
+                                    if (sizeSelect.value !== product.size) {
+                                        sizeSelect.value = product.size;
+                                        sizeCustomInput.style.display = "none";
+                                        sizeCustomInput.value = "";
+                                        hasUpdates = true;
+                                    }
+                                } else if (product.size) {
+                                    if (sizeSelect.value !== "other" || sizeCustomInput.value !== product.size) {
+                                        sizeSelect.value = "other";
+                                        sizeCustomInput.style.display = "block";
+                                        sizeCustomInput.value = product.size;
+                                        hasUpdates = true;
+                                    }
+                                }
+                            }
+                            
+                            if (hasUpdates && recentlySaved) {
+                                showModalUpdateNotification('Product data updated by another admin');
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.log('Modal product update check failed:', error);
+            }
+        }
+        
+        function showModalUpdateNotification(message) {
+            // Create a subtle pulse effect on the modal content
+            const modalContent = document.querySelector('.modal.show .modal-content');
+            if (modalContent) {
+                modalContent.style.boxShadow = '0 0 20px rgba(16, 185, 129, 0.3)';
+                
+                setTimeout(() => {
+                    modalContent.style.boxShadow = '';
+                }, 1000);
+            }
+        }
+        
+        // Enhanced modal data validation - detect external changes
+        async function validateModalData(type, id) {
+            try {
+                let response, data;
+                
+                if (type === 'user') {
+                    response = await fetch(`ajax/get_single_user.php?id=${id}`);
+                    data = await response.json();
+                    
+                    if (data.success && data.user) {
+                        const modal = document.getElementById('editUserModal');
+                        if (modal && modal.style.display === 'flex') {
+                            const currentName = document.getElementById('editUserName').value;
+                            const currentRole = document.getElementById('editUserRole').value;
+                            
+                            if (currentName !== data.user.userName || currentRole !== data.user.userRole) {
+                                showModalConflictNotification('This user has been modified by another user. Form data will be updated.');
+                                return false; // Data conflict detected
+                            }
+                        }
+                    }
+                } else if (type === 'product') {
+                    response = await fetch(`ajax/get_single_product.php?id=${id}`);
+                    data = await response.json();
+                    
+                    if (data.success && data.product) {
+                        const modal = document.getElementById('editProductModal');
+                        if (modal && modal.style.display === 'flex') {
+                            const currentName = document.getElementById('editProductName').value;
+                            const currentDesc = document.getElementById('editProductDescription').value;
+                            const currentQty = document.getElementById('editProductQty').value;
+                            const currentPrice = document.getElementById('editProductPrice').value;
+                            
+                            if (currentName !== data.product.prodName || 
+                                currentDesc !== data.product.prodDescription ||
+                                currentQty != data.product.quantity ||
+                                parseFloat(currentPrice) !== parseFloat(data.product.price.replace(',', ''))) {
+                                showModalConflictNotification('This product has been modified by another user. Form data will be updated.');
+                                return false; // Data conflict detected
+                            }
+                        }
+                    }
+                }
+                
+                return true; // No conflicts
+            } catch (error) {
+                console.log('Modal validation check failed:', error);
+                return true; // Assume no conflicts on error
+            }
+        }
+        
+        function showModalConflictNotification(message) {
+            // Create a more prominent notification for conflicts
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #f59e0b;
+                color: white;
+                padding: 16px 24px;
+                border-radius: 8px;
+                z-index: 10001;
+                font-size: 14px;
+                font-weight: 500;
+                box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+                opacity: 0;
+                transform: translateX(100%);
+                transition: all 0.3s ease;
+                max-width: 350px;
+                border-left: 4px solid #d97706;
+            `;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            // Trigger animation
+            requestAnimationFrame(() => {
+                notification.style.opacity = '1';
+                notification.style.transform = 'translateX(0)';
+            });
+            
+            // Remove after 5 seconds (longer for conflict notifications)
+            setTimeout(() => {
+                notification.style.opacity = '0';
+                notification.style.transform = 'translateX(100%)';
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 5000);
+        }
+
+        // Add keyboard support for modals
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                // Close any open edit modals and stop their updates
+                if (currentEditUserId && document.getElementById('editUserModal').style.display === 'flex') {
+                    closeModal('editUserModal');
+                }
+                if (currentEditProductId && document.getElementById('editProductModal').style.display === 'flex') {
+                    closeModal('editProductModal');
+                }
+                // Also close add modals
+                if (document.getElementById('userModal').style.display === 'flex') {
+                    closeModal('userModal');
+                }
+                if (document.getElementById('productModal').style.display === 'flex') {
+                    closeModal('productModal');
+                }
+            }
+        });
+
         function startRealTimeUpdates() {
             // Check for updates every 2 seconds
             setInterval(checkForUpdates, 2000);
@@ -871,6 +1255,11 @@ include("../../includes/db.php");
                         if (lastUserUpdate !== 0 && lastUserUpdate !== currentHash) {
                             updateUsersTable(data.users);
                             showUpdateNotification('Users table updated');
+                            
+                            // Signal modal updates are allowed after external changes
+                            if (currentEditUserId) {
+                                userFormLastSaved = Date.now();
+                            }
                         }
                         lastUserUpdate = currentHash;
                     }
@@ -887,6 +1276,11 @@ include("../../includes/db.php");
                             updateProductsTable(data.products);
                             showUpdateNotification('Products table updated');
                             triggerRetailerUpdate();
+                            
+                            // Signal modal updates are allowed after external changes
+                            if (currentEditProductId) {
+                                productFormLastSaved = Date.now();
+                            }
                         }
                         lastProductUpdate = currentHash;
                     }
@@ -956,8 +1350,8 @@ include("../../includes/db.php");
                     <td><span class='table-description'>${escapeHtml(truncatedDesc)}</span></td>
                     <td><span class='table-qty'>${product.quantity}</span></td>
                     <td><span class='table-price'>₱${parseFloat(product.price).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span></td>
-                    <td><span class='table-color'>${escapeHtml(product.color)}</span></td>
-                    <td><span class='table-size'>${escapeHtml(product.size)}</span></td>
+                    <td><span class='table-color'>${escapeHtml(product.color || 'N/A')}</span></td>
+                    <td><span class='table-size'>${escapeHtml(product.size || 'N/A')}</span></td>
                     <td><span class='table-created'>${product.created_at}</span></td>
                     <td><span class='table-created'>${product.updated_at}</span></td>
                     <td class='actions-cell'>
@@ -995,6 +1389,7 @@ include("../../includes/db.php");
         }
         
         function escapeHtml(text) {
+            if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
@@ -1056,16 +1451,7 @@ include("../../includes/db.php");
                 });
         }
 
-        // Override existing functions to include update triggers
-        const originalShowTab = showTab;
-        showTab = function(tab) {
-            originalShowTab(tab);
-            if (tab === 'products') {
-                setTimeout(() => {
-                    triggerRetailerUpdate();
-                }, 300);
-            }
-        };
+        // ...existing code...
     </script>           
 </body> 
 
