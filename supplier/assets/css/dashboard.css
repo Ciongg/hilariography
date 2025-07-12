@@ -541,9 +541,119 @@ tr:hover {
   transform: scale(1) translateY(0);
 }
 
-.modal h2 {
+.modal h2, .modal h3 {
   margin-bottom: 20px;
   color: #8b4513;
+}
+
+/* Modal Header */
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #d4af8c;
+}
+
+.modal-actions .close {
+  font-size: 24px;
+  font-weight: bold;
+  color: #8b4513;
+  cursor: pointer;
+  transition: color 0.3s ease;
+}
+
+.modal-actions .close:hover {
+  color: #dc2626;
+}
+
+/* Modal Body */
+.modal-body {
+  position: relative;
+}
+
+/* Modal States */
+.modal-loading, .modal-error, .modal-deleted {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.modal-loading .loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #8b4513;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.modal-loading .loading-text {
+  color: #8b4513;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.modal-error .error-icon,
+.modal-deleted .deleted-icon {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 20px;
+  color: #dc2626;
+}
+
+.modal-deleted .deleted-icon {
+  color: #9ca3af;
+}
+
+.modal-error .error-title,
+.modal-deleted .deleted-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #8b4513;
+}
+
+.modal-error .error-message,
+.modal-deleted .deleted-message {
+  color: #6b7280;
+  margin-bottom: 25px;
+  line-height: 1.5;
+}
+
+.modal-error .error-actions,
+.modal-deleted .deleted-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.modal-error .close-btn,
+.modal-deleted .close-btn {
+  background: linear-gradient(135deg, #8b4513, #a0522d);
+  color: white;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.modal-error .close-btn:hover,
+.modal-deleted .close-btn:hover {
+  background: linear-gradient(135deg, #a0522d, #8b4513);
+  transform: translateY(-1px);
+}
+
+/* Modal Product Content */
+.modal-product-content {
+  display: block;
 }
 
 .modal-buttons {

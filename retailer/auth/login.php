@@ -38,6 +38,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $_SESSION["retailer_username"] = $user['username'];
                 $_SESSION["retailer_id"] = $user['userID'];
                 $_SESSION["retailer_role"] = $user['userRole'];
+                
+                // Redirect to consolidated dashboard
                 header("Location: ../dashboard.php");
                 exit;
             } else {
